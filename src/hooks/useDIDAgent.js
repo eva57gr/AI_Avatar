@@ -65,6 +65,20 @@ export function useDIDAgent(videoRef) {
     }
   }, []);
 
+  const interrupt = useCallback(async () => {
+    if (!agentManagerRef.current) return;
+    try {
+      if (typeof agentManagerRef.current.interrupt === 'function') {
+        await agentManagerRef.current.interrupt();
+      } else if (typeof agentManagerRef.current.stopSpeaking === 'function') {
+        await agentManagerRef.current.stopSpeaking();
+      }
+    } catch (err) {
+      console.error('D-ID interrupt error:', err);
+    }
+    setIsSpeaking(false);
+  }, []);
+
   const chat = useCallback(async (text) => {
     if (!agentManagerRef.current) return;
     try {
@@ -88,5 +102,5 @@ export function useDIDAgent(videoRef) {
     };
   }, [disconnect]);
 
-  return { connectionState, isSpeaking, messages, connect, speak, chat, disconnect };
+  return { connectionState, isSpeaking, messages, connect, speak, interrupt, chat, disconnect };
 }

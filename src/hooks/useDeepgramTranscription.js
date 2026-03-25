@@ -4,9 +4,9 @@ const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:3001';
 
 export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscript, onVADSpeechStart, onVADSpeechEnd }) {
   const [isListening, setIsListening] = useState(false);
-  const [isSpeechActive, setIsSpeechActive] = useState(false); // VAD: voice currently detected
+  const [isSpeechActive, setIsSpeechActive] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [micPermission, setMicPermission] = useState('idle'); // idle | requesting | granted | denied
+  const [micPermission, setMicPermission] = useState('idle');
 
   const wsRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -14,7 +14,17 @@ export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscrip
   const finalRef = useRef('');
   const silenceTimerRef = useRef(null);
 
-  // ─── Request mic permission explicitly ───────────────────────────────────
+  // Ref-stable callbacks so the WebSocket handler always calls the latest version
+  const onFinalTranscriptRef = useRef(onFinalTranscript);
+  const onInterimTranscriptRef = useRef(onInterimTranscript);
+  const onVADSpeechStartRef = useRef(onVADSpeechStart);
+  const onVADSpeechEndRef = useRef(onVADSpeechEnd);
+
+  useEffect(() => { onFinalTranscriptRef.current = onFinalTranscript; }, [onFinalTranscript]);
+  useEffect(() => { onInterimTranscriptRef.current = onInterimTranscript; }, [onInterimTranscript]);
+  useEffect(() => { onVADSpeechStartRef.current = onVADSpeechStart; }, [onVADSpeechStart]);
+  useEffect(() => { onVADSpeechEndRef.current = onVADSpeechEnd; }, [onVADSpeechEnd]);
+
   const requestMicPermission = useCallback(async () => {
     setMicPermission('requesting');
     try {
@@ -30,10 +40,15 @@ export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscrip
     }
   }, []);
 
-  // ─── Start listening with VAD ─────────────────────────────────────────────
   const startListening = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
       setMicPermission('granted');
 
@@ -64,40 +79,38 @@ export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscrip
           setIsListening(true);
         }
 
-        // ── VAD: speech started ──────────────────────────────────────────
         if (msg.type === 'speech_started') {
           setIsSpeechActive(true);
-          onVADSpeechStart?.();
+          onVADSpeechStartRef.current?.();
           if (silenceTimerRef.current) {
             clearTimeout(silenceTimerRef.current);
             silenceTimerRef.current = null;
           }
         }
 
-        // ── Real-time transcript (interim + final) ───────────────────────
         if (msg.type === 'transcript') {
           if (msg.transcript && msg.transcript.trim()) {
             if (msg.isFinal) {
               finalRef.current += (finalRef.current ? ' ' : '') + msg.transcript;
               setTranscript(finalRef.current);
-              onInterimTranscript?.(finalRef.current);
+              onInterimTranscriptRef.current?.(finalRef.current);
             } else {
               const display = finalRef.current
                 ? finalRef.current + ' ' + msg.transcript
                 : msg.transcript;
               setTranscript(display);
-              onInterimTranscript?.(display);
+              onInterimTranscriptRef.current?.(display);
             }
           }
         }
 
-        // ── VAD: utterance ended → auto-submit ───────────────────────────
         if (msg.type === 'utterance_end') {
           setIsSpeechActive(false);
-          onVADSpeechEnd?.();
+          onVADSpeechEndRef.current?.();
           const text = finalRef.current.trim();
           if (text) {
-            onFinalTranscript?.(text);
+            onFinalTranscriptRef.current?.(text);
+            finalRef.current = '';
           }
         }
       };
@@ -117,12 +130,9 @@ export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscrip
       console.error('Mic access error:', err);
       setMicPermission('denied');
     }
-  }, [onFinalTranscript, onInterimTranscript, onVADSpeechStart, onVADSpeechEnd]);
+  }, []);
 
-  // ─── Stop listening ───────────────────────────────────────────────────────
   const stopListening = useCallback(() => {
-    const finalText = finalRef.current.trim();
-
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
@@ -150,8 +160,6 @@ export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscrip
     setIsSpeechActive(false);
     setTranscript('');
     finalRef.current = '';
-
-    return finalText;
   }, []);
 
   const resetTranscript = useCallback(() => {
