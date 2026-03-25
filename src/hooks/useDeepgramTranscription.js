@@ -1,6 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:3001';
+function getWsUrl() {
+  const raw = process.env.REACT_APP_WS_URL || 'ws://localhost:3001';
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return raw.replace(/^ws:\/\//, 'wss://');
+  }
+  return raw;
+}
+const WS_URL = getWsUrl();
 
 export function useDeepgramTranscription({ onFinalTranscript, onInterimTranscript, onVADSpeechStart, onVADSpeechEnd }) {
   const [isListening, setIsListening] = useState(false);

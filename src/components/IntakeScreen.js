@@ -3,7 +3,14 @@ import { useDIDAgent } from '../hooks/useDIDAgent';
 import { useDeepgramTranscription } from '../hooks/useDeepgramTranscription';
 import './IntakeScreen.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+function getBackendUrl() {
+  const raw = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return raw.replace(/^http:\/\//, 'https://');
+  }
+  return raw;
+}
+const BACKEND_URL = getBackendUrl();
 
 const PHASE = {
   CONNECTING: 'connecting',
